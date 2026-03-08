@@ -63,7 +63,7 @@ back everything with modern pediatric nutrition science.
 
 guida_agent = Agent(
     name="guida",
-    model="gemini-2.0-flash-live-001",
+    model="gemini-2.5-flash-native-audio-preview-12-2025",
     description="Guida — AI shopping grandmother for baby food introduction",
     instruction=GUIDA_SYSTEM_PROMPT,
     tools=[

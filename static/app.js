@@ -1,6 +1,10 @@
 /**
  * Guida Frontend — WebSocket client with mic, camera, and audio playback.
  * Connects to FastAPI server which bridges to Gemini Live API via ADK.
+ *
+ * Audio: sent as raw binary PCM (16kHz 16-bit mono) for efficiency.
+ * Camera: sent as base64 JPEG via JSON envelope.
+ * Responses: audio arrives as raw binary, text/tools as JSON.
  */
 
 class GuidaApp {
@@ -8,7 +12,6 @@ class GuidaApp {
     this.ws = null;
     this.audioContext = null;
     this.mediaStream = null;
-    this.audioWorklet = null;
     this.cameraStream = null;
     this.cameraInterval = null;
     this.micActive = true;
@@ -18,6 +21,10 @@ class GuidaApp {
     // Audio playback queue
     this.audioQueue = [];
     this.isPlaying = false;
+
+    // Session IDs
+    this.userId = 'user_' + Math.random().toString(36).slice(2, 10);
+    this.sessionId = 'session_' + Math.random().toString(36).slice(2, 10);
 
     // DOM refs
     this.startScreen = document.getElementById('startScreen');
@@ -47,7 +54,7 @@ class GuidaApp {
     this.setStatus('connecting', 'Connecting...');
 
     try {
-      // Initialize audio context
+      // Audio context at 24kHz for playback (Gemini outputs 24kHz PCM)
       this.audioContext = new AudioContext({ sampleRate: 24000 });
 
       // Get microphone
@@ -60,20 +67,30 @@ class GuidaApp {
         }
       });
 
-      // Set up audio capture via ScriptProcessor (AudioWorklet needs HTTPS)
       await this.setupAudioCapture();
 
-      // Connect WebSocket
+      // Connect WebSocket with user_id/session_id in path
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      this.ws = new WebSocket(`${protocol}//${location.host}/ws`);
+      this.ws = new WebSocket(
+        `${protocol}//${location.host}/ws/${this.userId}/${this.sessionId}`
+      );
+      this.ws.binaryType = 'arraybuffer';  // Receive audio as ArrayBuffer
 
       this.ws.onopen = () => {
         this.connected = true;
         this.setStatus('connected', 'Connected to Guida');
-        this.addChat('guida', 'Hello, dear! I\'m Guida. Tell me about your little one — how old is your baby?');
       };
 
-      this.ws.onmessage = (event) => this.handleMessage(JSON.parse(event.data));
+      this.ws.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          // Binary = audio response from Gemini
+          this.queueAudio(event.data);
+        } else {
+          // Text = JSON (text transcript, tool calls, tool results, errors)
+          this.handleMessage(JSON.parse(event.data));
+        }
+      };
+
       this.ws.onclose = () => this.handleDisconnect();
       this.ws.onerror = (e) => {
         console.error('WebSocket error:', e);
@@ -87,19 +104,18 @@ class GuidaApp {
   }
 
   async setupAudioCapture() {
-    const source = this.audioContext.createMediaStreamSource(this.mediaStream);
-
-    // Use ScriptProcessor for broad compatibility
-    // (AudioWorklet requires secure context + separate file)
-    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    // Create a separate context for capture at native rate
+    const captureCtx = new AudioContext();
+    const source = captureCtx.createMediaStreamSource(this.mediaStream);
+    const processor = captureCtx.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (e) => {
       if (!this.connected || !this.micActive) return;
 
       const inputData = e.inputBuffer.getChannelData(0);
 
-      // Downsample from audioContext.sampleRate to 16000
-      const ratio = this.audioContext.sampleRate / 16000;
+      // Downsample to 16kHz
+      const ratio = captureCtx.sampleRate / 16000;
       const outputLength = Math.floor(inputData.length / ratio);
       const pcm16 = new Int16Array(outputLength);
 
@@ -109,13 +125,15 @@ class GuidaApp {
         pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
       }
 
-      // Send as base64
-      const b64 = this.arrayBufferToBase64(pcm16.buffer);
-      this.sendWs({ type: 'audio', data: b64 });
+      // Send as raw binary (most efficient — matches bidi-demo pattern)
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(pcm16.buffer);
+      }
     };
 
     source.connect(processor);
-    processor.connect(this.audioContext.destination);
+    processor.connect(captureCtx.destination);
+    this._captureCtx = captureCtx;
   }
 
   handleMessage(msg) {
@@ -124,18 +142,13 @@ class GuidaApp {
         this.addChat(msg.author || 'guida', msg.data);
         break;
 
-      case 'audio':
-        this.queueAudio(msg.data, msg.mime_type);
-        break;
-
       case 'tool_result':
         this.handleToolResult(msg.tool, msg.data);
         break;
 
       case 'tool_call':
-        // Visual indicator that Guida is searching
         if (msg.tool === 'search_products') {
-          this.addChat('guida', '🔍 Searching the catalog...');
+          this.addChat('system', 'Searching the catalog...');
         }
         break;
 
@@ -152,7 +165,7 @@ class GuidaApp {
     } else if (tool === 'get_product_details' && data?.id) {
       this.showProducts([data]);
     } else if (tool === 'add_to_cart' && data?.session_id) {
-      this.addChat('system', `Added to cart! Session: ${data.session_id.slice(0, 8)}...`);
+      this.addChat('system', `Added to cart!`);
     }
   }
 
@@ -161,18 +174,27 @@ class GuidaApp {
     products.forEach(p => {
       const card = document.createElement('div');
       card.className = 'product-card';
+
+      const name = this.escapeHtml(p.name || 'Product');
+      const imgSrc = p.image_url || '/static/product-placeholder.svg';
+
       card.innerHTML = `
-        <img src="${p.image_url || '/static/product-placeholder.svg'}"
-             alt="${p.name}" onerror="this.src='/static/product-placeholder.svg'">
+        <img src="${this.escapeHtml(imgSrc)}"
+             alt="${name}" onerror="this.src='/static/product-placeholder.svg'">
         <div class="product-info">
-          <h4>${p.name || 'Product'}</h4>
+          <h4>${name}</h4>
           <div class="price">${this.formatPrice(p.price, p.currency)}</div>
-          <div class="availability">${p.available === 'in_stock' || p.available === true ? 'In Stock' : p.available || ''}</div>
+          <div class="availability">${
+            p.available === 'in_stock' || p.available === true
+              ? 'In Stock'
+              : this.escapeHtml(String(p.available || ''))
+          }</div>
         </div>
-        <button class="add-btn" data-id="${p.id}">Add to Cart</button>
+        <button class="add-btn">Add to Cart</button>
       `;
+
       card.querySelector('.add-btn').addEventListener('click', () => {
-        this.sendWs({ type: 'text', data: `Add "${p.name}" to my cart please` });
+        this.sendJson({ type: 'text', data: `Add "${p.name}" to my cart` });
       });
       this.productCards.appendChild(card);
     });
@@ -181,6 +203,7 @@ class GuidaApp {
   formatPrice(price, currency = 'USD') {
     if (!price) return '';
     const num = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(num)) return '';
     try {
       return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(num);
     } catch {
@@ -188,8 +211,10 @@ class GuidaApp {
     }
   }
 
-  queueAudio(b64Data, mimeType) {
-    this.audioQueue.push(b64Data);
+  // --- Audio Playback ---
+
+  queueAudio(arrayBuffer) {
+    this.audioQueue.push(arrayBuffer);
     this.guidaAvatar.classList.add('speaking');
     if (!this.isPlaying) this.playNextAudio();
   }
@@ -202,11 +227,10 @@ class GuidaApp {
     }
 
     this.isPlaying = true;
-    const b64 = this.audioQueue.shift();
-    const bytes = this.base64ToArrayBuffer(b64);
+    const buffer = this.audioQueue.shift();
 
-    // PCM 24kHz mono 16-bit → AudioBuffer
-    const pcm16 = new Int16Array(bytes);
+    // PCM 24kHz mono 16-bit LE → Float32
+    const pcm16 = new Int16Array(buffer);
     const float32 = new Float32Array(pcm16.length);
     for (let i = 0; i < pcm16.length; i++) {
       float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
@@ -222,6 +246,8 @@ class GuidaApp {
     source.start();
   }
 
+  // --- Chat ---
+
   addChat(author, text) {
     const div = document.createElement('div');
     div.className = `chat-msg ${author}`;
@@ -230,10 +256,11 @@ class GuidaApp {
     this.chatArea.scrollTop = this.chatArea.scrollHeight;
   }
 
-  async toggleMic() {
+  // --- Controls ---
+
+  toggleMic() {
     this.micActive = !this.micActive;
     this.micBtn.classList.toggle('active', this.micActive);
-
     if (this.mediaStream) {
       this.mediaStream.getAudioTracks().forEach(t => t.enabled = this.micActive);
     }
@@ -250,12 +277,12 @@ class GuidaApp {
         });
         this.cameraFeed.srcObject = this.cameraStream;
 
-        // Send frames at ~1 FPS
         const canvas = document.createElement('canvas');
         canvas.width = 768;
         canvas.height = 768;
         const ctx = canvas.getContext('2d');
 
+        // Send JPEG frames at ~1 FPS via JSON (image type)
         this.cameraInterval = setInterval(() => {
           if (!this.connected || !this.camActive) return;
           ctx.drawImage(this.cameraFeed, 0, 0, 768, 768);
@@ -264,7 +291,7 @@ class GuidaApp {
             const reader = new FileReader();
             reader.onload = () => {
               const b64 = reader.result.split(',')[1];
-              this.sendWs({ type: 'video', data: b64 });
+              this.sendJson({ type: 'image', data: b64, mimeType: 'image/jpeg' });
             };
             reader.readAsDataURL(blob);
           }, 'image/jpeg', 0.7);
@@ -284,7 +311,7 @@ class GuidaApp {
   }
 
   end() {
-    this.sendWs({ type: 'end' });
+    this.sendJson({ type: 'end' });
     this.handleDisconnect();
   }
 
@@ -296,11 +323,14 @@ class GuidaApp {
     if (this.cameraInterval) clearInterval(this.cameraInterval);
     if (this.cameraStream) this.cameraStream.getTracks().forEach(t => t.stop());
     if (this.mediaStream) this.mediaStream.getTracks().forEach(t => t.stop());
+    if (this._captureCtx) this._captureCtx.close();
 
     this.startScreen.classList.remove('hidden');
   }
 
-  sendWs(data) {
+  // --- Helpers ---
+
+  sendJson(data) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     }
@@ -311,22 +341,10 @@ class GuidaApp {
     this.statusText.textContent = text;
   }
 
-  arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  base64ToArrayBuffer(b64) {
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
+  escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 }
 

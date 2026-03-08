@@ -9,7 +9,6 @@ Architecture:
 import asyncio
 import base64
 import json
-import os
 import traceback
 import uuid
 
@@ -37,8 +36,8 @@ runner = Runner(
     session_service=session_service,
 )
 
-# Serve static frontend
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Serve static frontend — mount AFTER the root route
+# to avoid conflicts with "/" matching
 
 
 @app.get("/")
@@ -46,25 +45,30 @@ async def index():
     return FileResponse("static/index.html")
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.websocket("/ws/{user_id}/{session_id}")
+async def websocket_endpoint(ws: WebSocket, user_id: str, session_id: str):
     await ws.accept()
+    print(f"[session] Connected: {user_id}/{session_id}")
 
-    user_id = f"user_{uuid.uuid4().hex[:8]}"
-    session_id = f"session_{uuid.uuid4().hex[:8]}"
-
-    # Create session in memory store
-    session = await session_service.create_session(
-        app_name=APP_NAME,
-        user_id=user_id,
+    # Get or create session
+    session = await session_service.get_session(
+        app_name=APP_NAME, user_id=user_id, session_id=session_id
     )
+    if not session:
+        session = await session_service.create_session(
+            app_name=APP_NAME, user_id=user_id, session_id=session_id,
+        )
 
     live_request_queue = LiveRequestQueue()
 
-    # RunConfig for live streaming with native audio
+    # Native audio model → AUDIO response modality
+    # Text transcripts come via input/output_audio_transcription
     run_config = RunConfig(
         streaming_mode=StreamingMode.BIDI,
-        response_modalities=["AUDIO", "TEXT"],
+        response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -72,48 +76,66 @@ async def websocket_endpoint(ws: WebSocket):
                 )
             )
         ),
-        output_audio_transcription=types.AudioTranscriptionConfig(enabled=True),
-        input_audio_transcription=types.AudioTranscriptionConfig(enabled=True),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        session_resumption=types.SessionResumptionConfig(),
     )
 
     async def upstream_task():
         """Browser WebSocket → ADK LiveRequestQueue (user input)."""
         try:
             while True:
-                raw = await ws.receive_text()
-                msg = json.loads(raw)
-                msg_type = msg.get("type", "")
+                message = await ws.receive()
 
-                if msg_type == "audio":
-                    audio_bytes = base64.b64decode(msg["data"])
+                # Binary = raw PCM audio (most efficient path)
+                if "bytes" in message and message["bytes"]:
                     live_request_queue.send_realtime(
-                        types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
-                    )
-
-                elif msg_type == "video":
-                    frame_bytes = base64.b64decode(msg["data"])
-                    live_request_queue.send_realtime(
-                        types.Blob(data=frame_bytes, mime_type="image/jpeg")
-                    )
-
-                elif msg_type == "text":
-                    live_request_queue.send_content(
-                        types.Content(
-                            role="user",
-                            parts=[types.Part(text=msg["data"])],
+                        types.Blob(
+                            data=message["bytes"],
+                            mime_type="audio/pcm;rate=16000",
                         )
                     )
 
-                elif msg_type == "end":
-                    live_request_queue.close()
-                    break
+                # Text = JSON envelope for text input, images, or control
+                elif "text" in message and message["text"]:
+                    msg = json.loads(message["text"])
+                    msg_type = msg.get("type", "")
+
+                    if msg_type == "audio":
+                        # Fallback: base64-encoded audio
+                        audio_bytes = base64.b64decode(msg["data"])
+                        live_request_queue.send_realtime(
+                            types.Blob(
+                                data=audio_bytes,
+                                mime_type="audio/pcm;rate=16000",
+                            )
+                        )
+
+                    elif msg_type == "image":
+                        # Camera frame: base64-encoded JPEG
+                        frame_bytes = base64.b64decode(msg["data"])
+                        live_request_queue.send_realtime(
+                            types.Blob(
+                                data=frame_bytes,
+                                mime_type=msg.get("mimeType", "image/jpeg"),
+                            )
+                        )
+
+                    elif msg_type == "text":
+                        live_request_queue.send_content(
+                            types.Content(
+                                parts=[types.Part(text=msg["data"])],
+                            )
+                        )
+
+                    elif msg_type == "end":
+                        break
 
         except WebSocketDisconnect:
-            live_request_queue.close()
+            pass
         except Exception as e:
             print(f"[upstream] Error: {e}")
             traceback.print_exc()
-            live_request_queue.close()
 
     async def downstream_task():
         """ADK Runner.run_live() → Browser WebSocket (agent output)."""
@@ -127,24 +149,21 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
 
                 for part in event.content.parts:
-                    if part.text:
+                    # Audio response — send as raw binary for efficiency
+                    if part.inline_data and part.inline_data.data:
+                        mime = part.inline_data.mime_type or ""
+                        if "audio" in mime:
+                            await ws.send_bytes(part.inline_data.data)
+
+                    # Text (transcription or direct text)
+                    elif part.text:
                         await ws.send_json({
                             "type": "text",
                             "data": part.text,
                             "author": event.author or "guida",
                         })
 
-                    elif part.inline_data and part.inline_data.data:
-                        mime = part.inline_data.mime_type or ""
-                        if "audio" in mime:
-                            await ws.send_json({
-                                "type": "audio",
-                                "data": base64.b64encode(
-                                    part.inline_data.data
-                                ).decode(),
-                                "mime_type": mime,
-                            })
-
+                    # Tool call notification (for UI indicators)
                     elif part.function_call:
                         await ws.send_json({
                             "type": "tool_call",
@@ -154,13 +173,15 @@ async def websocket_endpoint(ws: WebSocket):
                             else {},
                         })
 
+                    # Tool result (product data for UI cards)
                     elif part.function_response:
+                        resp = {}
+                        if hasattr(part.function_response, "response"):
+                            resp = part.function_response.response
                         await ws.send_json({
                             "type": "tool_result",
                             "tool": part.function_response.name,
-                            "data": part.function_response.response
-                            if hasattr(part.function_response, "response")
-                            else {},
+                            "data": resp,
                         })
 
         except WebSocketDisconnect:
@@ -173,15 +194,13 @@ async def websocket_endpoint(ws: WebSocket):
             except Exception:
                 pass
 
-    # Run upstream + downstream concurrently — the bidi-demo pattern
+    # Run both directions concurrently — the bidi-demo pattern
     try:
-        await asyncio.gather(
-            upstream_task(),
-            downstream_task(),
-        )
+        await asyncio.gather(upstream_task(), downstream_task())
     except Exception as e:
         print(f"[session] Error: {e}")
     finally:
+        live_request_queue.close()
         print(f"[session] Ended: {user_id}/{session_id}")
 
 
