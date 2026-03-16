@@ -102,7 +102,7 @@ Browser (Mic + Camera)
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/<your-username>/guida-gemini-challenge.git
+git clone https://github.com/flowblinqadmin/guida-gemini-challenge.git
 cd guida-gemini-challenge
 
 # 2. Create virtual environment
