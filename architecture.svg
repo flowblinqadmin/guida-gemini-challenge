@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <linearGradient id="gemini" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4285F4"/>
+      <stop offset="100%" stop-color="#8AB4F8"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#34A853"/>
+      <stop offset="100%" stop-color="#81C995"/>
+    </linearGradient>
+    <linearGradient id="commerce" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EA4335"/>
+      <stop offset="100%" stop-color="#F28B82"/>
+    </linearGradient>
+    <linearGradient id="browser" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FBBC05"/>
+      <stop offset="100%" stop-color="#FDE293"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="680" rx="16" fill="#FAFAFA"/>
+
+  <!-- Title -->
+  <text x="450" y="36" text-anchor="middle" font-size="20" font-weight="700" fill="#202124">Guida — Architecture</text>
+  <text x="450" y="56" text-anchor="middle" font-size="12" fill="#5F6368">Gemini Live Agent Challenge | Live Agents Category</text>
+
+  <!-- Browser Box -->
+  <rect x="280" y="76" width="340" height="100" rx="12" fill="url(#browser)" opacity="0.15" filter="url(#shadow)"/>
+  <rect x="280" y="76" width="340" height="100" rx="12" fill="none" stroke="#FBBC05" stroke-width="2"/>
+  <text x="450" y="102" text-anchor="middle" font-size="14" font-weight="700" fill="#202124">Browser Client</text>
+  <text x="340" y="124" text-anchor="middle" font-size="11" fill="#5F6368">Microphone</text>
+  <text x="450" y="124" text-anchor="middle" font-size="11" fill="#5F6368">Camera</text>
+  <text x="560" y="124" text-anchor="middle" font-size="11" fill="#5F6368">Speaker</text>
+  <text x="450" y="146" text-anchor="middle" font-size="10" fill="#5F6368">Web Audio API | WebSocket | Canvas UI</text>
+  <!-- Icons -->
+  <text x="340" y="144" text-anchor="middle" font-size="16">🎤</text>
+  <text x="450" y="144" text-anchor="middle" font-size="16">📷</text>
+  <text x="560" y="144" text-anchor="middle" font-size="16">🔊</text>
+
+  <!-- Arrow: Browser → Server -->
+  <line x1="400" y1="176" x2="400" y2="218" stroke="#FBBC05" stroke-width="2" marker-end="url(#arrowYellow)"/>
+  <line x1="500" y1="218" x2="500" y2="176" stroke="#34A853" stroke-width="2" marker-end="url(#arrowGreen)"/>
+  <text x="370" y="200" text-anchor="end" font-size="9" fill="#5F6368">PCM audio</text>
+  <text x="374" y="210" text-anchor="end" font-size="9" fill="#5F6368">+ JPEG frames</text>
+  <text x="530" y="200" text-anchor="start" font-size="9" fill="#5F6368">Audio stream</text>
+  <text x="530" y="210" text-anchor="start" font-size="9" fill="#5F6368">+ JSON events</text>
+
+  <!-- Google Cloud boundary -->
+  <rect x="60" y="226" width="780" height="200" rx="14" fill="url(#cloud)" opacity="0.06"/>
+  <rect x="60" y="226" width="780" height="200" rx="14" fill="none" stroke="#34A853" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="80" y="248" font-size="12" font-weight="600" fill="#34A853">Google Cloud Run</text>
+
+  <!-- FastAPI Server Box -->
+  <rect x="100" y="260" width="700" height="148" rx="10" fill="white" filter="url(#shadow)"/>
+  <rect x="100" y="260" width="700" height="148" rx="10" fill="none" stroke="#34A853" stroke-width="1.5"/>
+  <text x="450" y="284" text-anchor="middle" font-size="14" font-weight="700" fill="#202124">FastAPI WebSocket Server</text>
+  <text x="450" y="300" text-anchor="middle" font-size="10" fill="#5F6368">server.py — uvicorn on port 8000</text>
+
+  <!-- Upstream box -->
+  <rect x="130" y="312" width="180" height="56" rx="8" fill="#E8F0FE"/>
+  <rect x="130" y="312" width="180" height="56" rx="8" fill="none" stroke="#4285F4" stroke-width="1"/>
+  <text x="220" y="334" text-anchor="middle" font-size="11" font-weight="600" fill="#1967D2">Upstream Task</text>
+  <text x="220" y="350" text-anchor="middle" font-size="9" fill="#5F6368">Browser → LiveRequestQueue</text>
+  <text x="220" y="362" text-anchor="middle" font-size="9" fill="#5F6368">audio Blob | image Blob | text Content</text>
+
+  <!-- ADK Runner box -->
+  <rect x="340" y="312" width="220" height="56" rx="8" fill="#E8F5E9"/>
+  <rect x="340" y="312" width="220" height="56" rx="8" fill="none" stroke="#34A853" stroke-width="1"/>
+  <text x="450" y="334" text-anchor="middle" font-size="11" font-weight="600" fill="#1E8E3E">Google ADK Runner</text>
+  <text x="450" y="350" text-anchor="middle" font-size="9" fill="#5F6368">InMemorySessionService</text>
+  <text x="450" y="362" text-anchor="middle" font-size="9" fill="#5F6368">LiveRequestQueue | BIDI Streaming</text>
+
+  <!-- Downstream box -->
+  <rect x="590" y="312" width="180" height="56" rx="8" fill="#FEF7E0"/>
+  <rect x="590" y="312" width="180" height="56" rx="8" fill="none" stroke="#FBBC05" stroke-width="1"/>
+  <text x="680" y="334" text-anchor="middle" font-size="11" font-weight="600" fill="#E37400">Downstream Task</text>
+  <text x="680" y="350" text-anchor="middle" font-size="9" fill="#5F6368">run_live() → Browser</text>
+  <text x="680" y="362" text-anchor="middle" font-size="9" fill="#5F6368">audio | text | tool_call | tool_result</text>
+
+  <!-- Arrows between internal boxes -->
+  <line x1="310" y1="340" x2="338" y2="340" stroke="#4285F4" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+  <line x1="560" y1="340" x2="588" y2="340" stroke="#FBBC05" stroke-width="1.5" marker-end="url(#arrowYellowSm)"/>
+
+  <!-- Arrow: Server → Gemini -->
+  <path d="M450 426 L450 466" stroke="#4285F4" stroke-width="2" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M470 466 L470 426" stroke="#8AB4F8" stroke-width="2" fill="none" marker-end="url(#arrowBlueLight)"/>
+
+  <!-- Gemini Box -->
+  <rect x="240" y="470" width="420" height="90" rx="12" fill="url(#gemini)" opacity="0.12" filter="url(#shadow)"/>
+  <rect x="240" y="470" width="420" height="90" rx="12" fill="none" stroke="#4285F4" stroke-width="2"/>
+  <text x="450" y="498" text-anchor="middle" font-size="15" font-weight="700" fill="#1967D2">Gemini 2.5 Flash — Native Audio</text>
+  <text x="450" y="516" text-anchor="middle" font-size="10" fill="#5F6368">gemini-2.5-flash-native-audio-preview-12-2025</text>
+  <text x="310" y="540" text-anchor="middle" font-size="10" fill="#5F6368">Bidirectional Audio</text>
+  <text x="450" y="540" text-anchor="middle" font-size="10" fill="#5F6368">Vision (Camera)</text>
+  <text x="590" y="540" text-anchor="middle" font-size="10" fill="#5F6368">Function Calling</text>
+
+  <!-- Arrow: Gemini → FlowBlinq -->
+  <path d="M590 530 L750 530 L750 610" stroke="#EA4335" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrowRed)"/>
+  <text x="760" y="575" text-anchor="start" font-size="9" fill="#5F6368">Tool calls</text>
+  <text x="760" y="586" text-anchor="start" font-size="9" fill="#5F6368">(HTTP)</text>
+
+  <!-- FlowBlinq Box -->
+  <rect x="580" y="610" width="280" height="60" rx="10" fill="url(#commerce)" opacity="0.1" filter="url(#shadow)"/>
+  <rect x="580" y="610" width="280" height="60" rx="10" fill="none" stroke="#EA4335" stroke-width="1.5"/>
+  <text x="720" y="634" text-anchor="middle" font-size="13" font-weight="700" fill="#C5221F">FlowBlinq ACP</text>
+  <text x="720" y="652" text-anchor="middle" font-size="9" fill="#5F6368">Product Search | Cart | Checkout Sessions</text>
+
+  <!-- Tools legend -->
+  <rect x="60" y="610" width="240" height="60" rx="10" fill="white" filter="url(#shadow)"/>
+  <rect x="60" y="610" width="240" height="60" rx="10" fill="none" stroke="#DADCE0" stroke-width="1"/>
+  <text x="180" y="630" text-anchor="middle" font-size="11" font-weight="600" fill="#202124">Agent Tools (tools.py)</text>
+  <text x="180" y="648" text-anchor="middle" font-size="9" fill="#5F6368">search_products | get_product_details</text>
+  <text x="180" y="660" text-anchor="middle" font-size="9" fill="#5F6368">check_availability | add_to_cart | get_cart</text>
+
+  <!-- Arrow: Tools → FlowBlinq -->
+  <line x1="300" y1="640" x2="578" y2="640" stroke="#EA4335" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrowYellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#FBBC05"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#34A853"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4285F4"/>
+    </marker>
+    <marker id="arrowBlueLight" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8AB4F8"/>
+    </marker>
+    <marker id="arrowYellowSm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#FBBC05"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA4335"/>
+    </marker>
+  </defs>
+</svg>

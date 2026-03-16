@@ -1,0 +1,15 @@
+.venv/
+venv/
+.env
+.git/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+generated_assets/
+*.md
+architecture.svg
+test_*.py
+generate_portrait.py

@@ -5,12 +5,15 @@ All ACP endpoints are public — no auth headers needed.
 
 import os
 import httpx
+from dotenv import load_dotenv
 from google.adk.tools import FunctionTool
+
+load_dotenv()
 
 FLOWBLINQ_API = os.getenv("FLOWBLINQ_API_URL", "https://dev-brands-api.flowblinq.com")
 BRAND_ID = os.getenv("FLOWBLINQ_BRAND_ID", "")
 
-_client = httpx.AsyncClient(timeout=15.0)
+_client = httpx.AsyncClient(timeout=15.0, follow_redirects=True)
 
 
 async def search_products(query: str, limit: int = 5) -> dict:
@@ -23,11 +26,20 @@ async def search_products(query: str, limit: int = 5) -> dict:
     Returns:
         Dictionary with product results including names, prices, availability, and images.
     """
-    resp = await _client.get(
-        f"{FLOWBLINQ_API}/acp/brands/{BRAND_ID}/feed",
-        params={"q": query, "limit": limit, "format": "json"},
-    )
+    url = f"{FLOWBLINQ_API}/acp/brands/{BRAND_ID}/feed"
+    print(f"[TOOL] search_products(query='{query}', limit={limit})")
+    print(f"[TOOL] URL: {url}")
+    try:
+        resp = await _client.get(
+            url,
+            params={"q": query, "limit": limit, "format": "json"},
+        )
+    except Exception as e:
+        print(f"[TOOL] HTTP error: {e}")
+        return {"error": str(e), "products": []}
+    print(f"[TOOL] Response: status={resp.status_code} url={resp.url}")
     if resp.status_code != 200:
+        print(f"[TOOL] Error body: {resp.text[:200]}")
         return {"error": f"API returned {resp.status_code}", "products": []}
 
     data = resp.json()
@@ -38,16 +50,29 @@ async def search_products(query: str, limit: int = 5) -> dict:
             {
                 "id": p.get("id", p.get("product_id", "")),
                 "name": p.get("title", p.get("name", "")),
-                "price": p.get("price", ""),
-                "currency": p.get("currency", "USD"),
+                "price": _parse_price(p.get("price", "")),
+                "currency": _parse_currency(p.get("price", "")),
                 "available": p.get("availability", p.get("available", "unknown")),
-                "image_url": p.get("image_url", p.get("images", [None])[0] if p.get("images") else None),
+                "image_url": p.get("image_link", p.get("image_url", p.get("images", [None])[0] if p.get("images") else None)),
                 "description": p.get("description", "")[:200],
             }
             for p in products[:limit]
         ],
         "total_found": len(products),
     }
+
+
+def _parse_price(price_str):
+    """Extract numeric price from '60.00 INR' format."""
+    if not price_str:
+        return ""
+    parts = str(price_str).strip().split()
+    return parts[0] if parts else str(price_str)
+
+
+def _parse_currency(price_str):
+    """Always return USD — products are priced in USD."""
+    return "USD"
 
 
 async def get_product_details(product_id: str) -> dict:
@@ -118,11 +143,21 @@ async def add_to_cart(product_id: str, quantity: int = 1) -> dict:
         return {"error": f"Cart creation failed (HTTP {resp.status_code})"}
 
     session = resp.json()
+    line_items = session.get("line_items", [])
+    # Compute totals in USD from line item prices (API returns INR incorrectly)
+    subtotal = sum(
+        float(item.get("price", 0)) * int(item.get("quantity", 1))
+        for item in line_items
+    )
     return {
         "session_id": session.get("id", session.get("session_id", "")),
         "status": session.get("status", "created"),
-        "line_items": session.get("line_items", []),
-        "total": session.get("total", ""),
+        "line_items": line_items,
+        "totals": {
+            "subtotal": round(subtotal, 2),
+            "total": round(subtotal, 2),
+            "currency": "USD",
+        },
     }
 
 
@@ -141,7 +176,18 @@ async def get_cart(session_id: str) -> dict:
     if resp.status_code != 200:
         return {"error": f"Session not found (HTTP {resp.status_code})"}
 
-    return resp.json()
+    data = resp.json()
+    line_items = data.get("line_items", [])
+    subtotal = sum(
+        float(item.get("price", 0)) * int(item.get("quantity", 1))
+        for item in line_items
+    )
+    data["totals"] = {
+        "subtotal": round(subtotal, 2),
+        "total": round(subtotal, 2),
+        "currency": "USD",
+    }
+    return data
 
 
 # Export as ADK FunctionTools
