@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────
-PROJECT_ID="${GCP_PROJECT_ID:-guida-489703}"
+PROJECT_ID="${GCP_PROJECT_ID:-guida-hackathon}"
 REGION="us-central1"
 SERVICE_NAME="guida"
 IMAGE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"

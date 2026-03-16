@@ -6,6 +6,8 @@ A voice-first AI shopping agent that helps parents navigate baby food introducti
 
 ## Demo
 
+**Live**: [guida-476283827622.us-central1.run.app](https://guida-476283827622.us-central1.run.app)
+
 > _4-minute demo video link here_
 
 ## Architecture
@@ -144,7 +146,7 @@ export GOOGLE_API_KEY="your-gemini-api-key"
 export FLOWBLINQ_API_URL="https://dev-brands-api.flowblinq.com"
 export FLOWBLINQ_BRAND_ID="your-brand-uuid"
 
-# Optional: override GCP project (defaults to guida-gemini-challenge)
+# Optional: override GCP project (defaults to guida-hackathon)
 export GCP_PROJECT_ID="your-project-id"
 
 # Deploy
@@ -196,6 +198,7 @@ guida-gemini-challenge/
 ├── Dockerfile             # Container config (Python 3.12-slim)
 ├── deploy.sh              # Google Cloud Run deployment script
 ├── .env.example           # Environment variable template
+├── .dockerignore          # Keeps .venv, .env, tests out of container
 ├── generate_portrait.py   # One-off: generate Guida avatar with Gemini
 ├── test_e2e.py            # End-to-end test suite
 ├── test_ws.py             # WebSocket connectivity test
